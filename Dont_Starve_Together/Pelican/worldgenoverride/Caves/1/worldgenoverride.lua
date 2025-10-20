@@ -1,0 +1,23 @@
+KLEI     1 return {
+	override_enabled = true,
+	worldgen_preset = "DST_CAVE",
+	settings_preset = "DST_CAVE",
+	overrides = {
+		atriumgate = "veryfast",
+		banana = "often",
+		basicresource_regrowth = "always",
+		daywalker = "always",
+		extrastartingitems = "0",
+		flower_cave = "often",
+		flower_cave_regrowth = "veryfast",
+		ghostsanitydrain = "none",
+		grass = "often",
+		grassgekkos = "often",
+		healthpenalty = "none",
+		portalresurection = "always",
+		resettime = "none",
+		sapling = "often",
+		toadstool = "always",
+		wormlights = "often",
+	},
+}
