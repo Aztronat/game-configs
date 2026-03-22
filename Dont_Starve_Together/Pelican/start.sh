@@ -110,6 +110,45 @@ else
 fi
 echo "" # Add a blank line for readability
 
+# --- Worldgen Override Cleanup ---
+echo ">>> Cleaning up default entries from worldgenoverride.lua files..."
+for wg_file in \
+    "${STORAGE_ROOT}/${CLUSTER_NAME}/Master/worldgenoverride.lua" \
+    "${STORAGE_ROOT}/${CLUSTER_NAME}/Caves/worldgenoverride.lua"; do
+    if [ -f "${wg_file}" ]; then
+        sed -i '/= "default"/d' "${wg_file}"
+        echo "    Cleaned: ${wg_file}"
+    else
+        echo "    Skipped (not found): ${wg_file}"
+    fi
+done
+echo ""
+
+# --- modoverrides.lua Validation ---
+echo ">>> Validating modoverrides.lua files..."
+
+for shard in Master Caves; do
+    mod_file="${STORAGE_ROOT}/${CLUSTER_NAME}/${shard}/modoverrides.lua"
+    if [ -f "${mod_file}" ]; then
+        before=$(cat "${mod_file}")
+        sed -i -E ':a;N;$!ba;s/,(\n[[:space:]]*\}[[:space:]]*$)/\1/' "${mod_file}"
+        after=$(cat "${mod_file}")
+        if [ "${before}" != "${after}" ]; then
+            echo "    ${shard} modoverrides.lua EXTRA END COMMA FIXED"
+        fi
+    fi
+done
+
+MASTER_MOD="${STORAGE_ROOT}/${CLUSTER_NAME}/Master/modoverrides.lua"
+CAVES_MOD="${STORAGE_ROOT}/${CLUSTER_NAME}/Caves/modoverrides.lua"
+
+if [ -f "${MASTER_MOD}" ] && [ -f "${CAVES_MOD}" ]; then
+    if ! cmp -s "${MASTER_MOD}" "${CAVES_MOD}"; then
+        echo ">>> WARNING /!\ THE modoverrides.lua OF MASTER AND CAVES ARE NOT IDENTICAL /!\ "
+    fi
+fi
+echo ""
+
 # --- Cleanup Function ---
 cleanup() {
     echo ">>> Shutting down server and cleaning up..."
