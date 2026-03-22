@@ -26,6 +26,8 @@ BIN_DIR="${CONTAINER_DIR}/bin64"
 STORAGE_ROOT="${CONTAINER_DIR}/DoNotStarveTogether"
 CLUSTER_NAME="MyDediServer"
 MAX_PLAYERS="${MAX_PLAYERS:-20}"
+CAVES_READY_FLAG="/tmp/caves_ready"
+MASTER_READY_FLAG="/tmp/master_ready"
 
 # Shard configurations: name, port, fifo, color
 CAVES_PORT="11012"
@@ -169,8 +171,8 @@ cleanup() {
     # Kill all child processes
     pkill -P $$ 2>/dev/null
     
-    # Clean up FIFOs
-    rm -f "${CAVES_FIFO}" "${MASTER_FIFO}"
+    # Clean up FIFOs and flags
+    rm -f "${CAVES_FIFO}" "${MASTER_FIFO}" "${CAVES_READY_FLAG}" "${MASTER_READY_FLAG}"
     
     echo ">>> Cleanup complete."
     exit 0
@@ -189,7 +191,8 @@ start_caves() {
             -cluster "${CLUSTER_NAME}" \
             -players "${MAX_PLAYERS}" \
             -shard Caves 2>&1
-    ) | stdbuf -oL sed "s/^/\x1b[38;5;${CAVES_COLOR}m[CAVES]\x1b[0m /" &
+    ) | stdbuf -oL tee >(grep -m1 "Sim paused" > /dev/null && touch "${CAVES_READY_FLAG}" && cat > /dev/null) \
+      | stdbuf -oL sed "s/^/\x1b[38;5;${CAVES_COLOR}m[CAVES]\x1b[0m /" &
 }
 
 start_master() {
@@ -204,7 +207,8 @@ start_master() {
             -cluster "${CLUSTER_NAME}" \
             -players "${MAX_PLAYERS}" \
             -shard Master 2>&1
-    ) | stdbuf -oL sed "s/^/\x1b[38;5;${MASTER_COLOR}m[MASTER]\x1b[0m /" &
+    ) | stdbuf -oL tee >(grep -m1 "Sim paused" > /dev/null && touch "${MASTER_READY_FLAG}" && cat > /dev/null) \
+      | stdbuf -oL sed "s/^/\x1b[38;5;${MASTER_COLOR}m[MASTER]\x1b[0m /" &
 }
 
 # --- Main Execution ---
@@ -214,8 +218,8 @@ trap cleanup EXIT SIGTERM SIGINT
 
 echo ">>> Initializing Don't Starve Together server..."
 
-# Remove old FIFOs and create new ones
-rm -f "${CAVES_FIFO}" "${MASTER_FIFO}"
+# Remove old FIFOs and readiness flags
+rm -f "${CAVES_FIFO}" "${MASTER_FIFO}" "${CAVES_READY_FLAG}" "${MASTER_READY_FLAG}"
 mkfifo "${CAVES_FIFO}" "${MASTER_FIFO}"
 
 # Initialize FIFOs
@@ -226,18 +230,62 @@ echo "" > "${MASTER_FIFO}" &
 echo ">>> Starting Caves shard on port ${CAVES_PORT}..."
 start_caves
 
-# Wait for Caves to initialize
 sleep 5
 
 # Start Master shard
 echo ">>> Starting Master shard on port ${MASTER_PORT}..."
 start_master
 
-echo ">>> All shards launched. Server is ready!"
-echo ">>> Monitoring for input and server status..."
+echo ">>> All shards launched. Waiting for world generation..."
+
+# Loop Tracking Variables
+CAVES_ANNOUNCED=false
+MASTER_ANNOUNCED=false
+FUNCTIONS_SENT=false
+BOTH_READY_TIME=0
+
+# Custom Lua Functions
+C_COUNT='c_count = function(...) local results = {} local grand_total = 0 for _, prefab in ipairs({...}) do local count = 0 for k, v in pairs(Ents) do if v.prefab == prefab and v.components.inventoryitem and v.components.inventoryitem.owner == nil then count = count + 1 end end table.insert(results, count .. " " .. prefab) grand_total = grand_total + count end print("There are " .. table.concat(results, ", ") .. " on the ground.") return grand_total end'
+
+C_CLEANUP='c_cleanup = function(...) local results = {} local grand_total = 0 for _, prefab in ipairs({...}) do local count = 0 for k, v in pairs(Ents) do if v.prefab == prefab and v.components.inventoryitem and v.components.inventoryitem.owner == nil then v:Remove() count = count + 1 end end table.insert(results, count .. " " .. prefab) grand_total = grand_total + count end print("Cleaned up " .. table.concat(results, ", ") .. " off the ground.") return grand_total end'
 
 # Main loop: handle stdin and monitor server processes
 while read -t 1 -r line 2>/dev/null || true; do
+    
+    # Check if Caves finished loading
+    if [ "${CAVES_ANNOUNCED}" = false ] && [ -f "${CAVES_READY_FLAG}" ]; then
+        CAVES_ANNOUNCED=true
+        echo ">> [CAVES] is live!"
+    fi
+    
+    # Check if Master finished loading
+    if [ "${MASTER_ANNOUNCED}" = false ] && [ -f "${MASTER_READY_FLAG}" ]; then
+        MASTER_ANNOUNCED=true
+        echo ">> [MASTER] is live!"
+    fi
+
+    # Announce when both shards are ready
+    if [ "${CAVES_ANNOUNCED}" = true ] && [ "${MASTER_ANNOUNCED}" = true ] && [ "${FUNCTIONS_SENT}" = false ] && [ "${BOTH_READY_TIME}" = 0 ]; then
+        echo ">>> Server is up and running!"
+    fi
+
+    # Trigger custom scripts 20 seconds after both are live
+    if [ "${CAVES_ANNOUNCED}" = true ] && [ "${MASTER_ANNOUNCED}" = true ] && [ "${FUNCTIONS_SENT}" = false ]; then
+        if [ "${BOTH_READY_TIME}" = 0 ]; then
+            BOTH_READY_TIME=$(date +%s)
+        fi
+        now=$(date +%s)
+        if [ $((now - BOTH_READY_TIME)) -ge 20 ]; then
+            FUNCTIONS_SENT=true
+            echo "${C_COUNT}" >> "${MASTER_FIFO}"
+            echo "${C_CLEANUP}" >> "${MASTER_FIFO}"
+            echo "${C_COUNT}" >> "${CAVES_FIFO}"
+            echo "${C_CLEANUP}" >> "${CAVES_FIFO}"
+            echo ">>> Successfully added custom console functions (c_count, c_cleanup)."
+        fi
+    fi
+
+    # Handle standard console input
     if [ -n "$line" ]; then
         # Send input to Master first, then Caves
         echo "$line" >> "${MASTER_FIFO}" &
