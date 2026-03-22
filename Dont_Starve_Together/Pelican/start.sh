@@ -181,7 +181,6 @@ start_caves() {
     (
         cd "${BIN_DIR}" && \
         tail -f "${CAVES_FIFO}" 2>/dev/null | \
-        ./dontstarve_dedicated_server_nullrenderer_x64 \
         nice -n -10 ./dontstarve_dedicated_server_nullrenderer_x64 \
             -bind_ip 0.0.0.0 \
             -port "${CAVES_PORT}" \
@@ -197,7 +196,6 @@ start_master() {
     (
         cd "${BIN_DIR}" && \
         tail -f "${MASTER_FIFO}" 2>/dev/null | \
-        ./dontstarve_dedicated_server_nullrenderer_x64 \
         nice -n -10 ./dontstarve_dedicated_server_nullrenderer_x64 \
             -bind_ip 0.0.0.0 \
             -port "${MASTER_PORT}" \
