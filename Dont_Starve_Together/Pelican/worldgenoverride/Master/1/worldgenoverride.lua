@@ -3,7 +3,6 @@ KLEI     1 return {
 	worldgen_preset = "ENDLESS",
 	settings_preset = "ENDLESS",
 	overrides = {
-		angrybees = "often",
 		beefalo = "often",
 		beequeen = "always",
 		bees = "often",
@@ -16,6 +15,7 @@ KLEI     1 return {
 		dragonfly = "always",
 		extrastartingitems = "0",
 		eyeofterror = "always",
+		flint = "often",
 		goosemoose = "often",
 		grass = "often",
 		grassgekkos = "rare",
